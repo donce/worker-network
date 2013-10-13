@@ -1,16 +1,32 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include "common.h"
-
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <arpa/inet.h>
 
 #define MAX_WAITING_CONNECTIONS 3
 #define MAX_CLIENTS 30
 
+int client_sockets[MAX_CLIENTS];
+int next_task_id = 0;
+
+#define JOBS_COUNT 3
+const char *JOBS[JOBS_COUNT] = {
+	"sleep 3",
+	"echo 'Labas!'",
+	"pwd"
+};
+
+void sendTask(int client, std::string command) {
+	WorkRequest request;
+	request.id = next_task_id++;
+	request.command = command;
+	sendWorkRequest(client_sockets[client], request);
+}
+
+void addTask(int client) {
+	sendTask(client, JOBS[rand()%JOBS_COUNT]);
+}
+
+void useResult(WorkResult *result, int client) {
+	printf("#%d result received:\n", result->id);
+}
 
 int main(int argc, char *argv[]) {
 	if (argc > 2) {
@@ -56,7 +72,6 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	int client_sockets[MAX_CLIENTS];
 	for (int i = 0; i < MAX_CLIENTS; ++i)
 		client_sockets[i] = -1;
 
@@ -96,11 +111,23 @@ int main(int argc, char *argv[]) {
 				client_sockets[pos] = accept(listen_socket, (struct sockaddr*)&client_addr,
 											 &client_length);
 				printf("Worker connected at %s\n", inet_ntoa(client_addr.sin_addr));
+				for (int i = 0; i < 10; ++i)
+					addTask(pos);
 			}
 		}
 		for (int i = 0; i < MAX_CLIENTS; ++i)
 			if (client_sockets[i] != -1 && FD_ISSET(client_sockets[i], &set)) {
-				printf("receiving from %d client\n", i);
+				int success;
+				WorkResult *result = receiveWorkResult(client_sockets[i], success);
+				if (success > 0)
+					useResult(result, i);
+				else if (success == 0) {
+					printf("Worker disconnected.\n");
+					close(client_sockets[i]);
+					client_sockets[i] = -1;
+				}
+				else
+					printf("receiving failed\n");
 			}
 	}
 
