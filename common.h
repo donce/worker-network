@@ -1,0 +1,2 @@
+#define PORT_MAX_VALUE (2<<15)-1
+#define DEFAULT_PORT 1323
